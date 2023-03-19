@@ -1,0 +1,3 @@
+[submodule "auto_ops"]
+	path = auto_ops
+	url = https://github.com/ArvinSKushwaha/auto_ops.git
