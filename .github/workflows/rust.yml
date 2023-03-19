@@ -25,7 +25,6 @@ jobs:
         run: |
           set -e
             cargo llvm-cov --no-cfg-coverage nextest --no-fail-fast --no-report
-          done
         shell: bash
 
       - name: Generate coverage report
