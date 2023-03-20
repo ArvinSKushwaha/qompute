@@ -1,6 +1,8 @@
 #[macro_use]
 pub mod complex;
 
+pub mod prelude;
+
 #[cfg(test)]
 mod tests {
     use num::Complex;

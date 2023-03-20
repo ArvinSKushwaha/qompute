@@ -1,4 +1,5 @@
-use super::{Complex, Float};
+use crate::prelude::*;
+
 use num::{One, Zero};
 use slice_of_array::prelude::*;
 use smallvec::{smallvec, SmallVec, ToSmallVec};
@@ -118,7 +119,7 @@ pub struct Operator<T: Float> {
 }
 
 impl<T: Float> Operator<T> {
-    pub fn new(shape: Shape) -> Self {
+    pub fn new_with_shape(shape: Shape) -> Self {
         let mut op = Self {
             shape,
             inner: smallvec![Complex::<T>::zero(); shape.size() ],
@@ -127,6 +128,23 @@ impl<T: Float> Operator<T> {
         (0..shape.cols.min(shape.rows)).for_each(|i| op[(i, i)] = Complex::<T>::one());
 
         op
+    }
+
+    pub fn from_diag<I>(n: I) -> Self
+    where
+        I: IntoIterator<Item = Complex<T>>,
+    {
+        let n = n.into_iter().collect::<Vec<_>>();
+        let shape = (n.len(), n.len()).into();
+        let inner = (0..n.len())
+            .map(|i| {
+                let mut m = vec![Complex::<T>::zero(); n.len()];
+                m[i] = n[i];
+                m.into_iter()
+            })
+            .flatten()
+            .collect();
+        Self { shape, inner }
     }
 }
 
@@ -367,15 +385,7 @@ impl<T: Float, const M: usize, const N: usize> From<[[T; N]; M]> for Operator<T>
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        cmpx,
-        complex::{
-            braket::{Bra, ComplexObject, Operator},
-            Complex, If32,
-        },
-    };
-
-    use super::Ket;
+    use crate::prelude::*;
 
     #[test]
     fn test_braket() {

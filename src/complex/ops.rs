@@ -1,6 +1,6 @@
 use num::Zero;
 
-use crate::complex::{braket::ComplexObject, Complex, Float};
+use crate::prelude::*;
 
 use super::braket::{Bra, Ket, Operator};
 
@@ -87,7 +87,7 @@ auto_ops::impl_op_ex!(* <T: Float> |lhs: &Ket<T>, rhs: &Bra<T>| -> Operator<T> {
     let (_, lhs_rows) = lhs.shape().into();
     let (rhs_cols, _) = rhs.shape().into();
 
-    let mut op = Operator::new((rhs.rows(), lhs.cols()).into());
+    let mut op = Operator::new_with_shape((rhs.rows(), lhs.cols()).into());
 
     for row in 0..lhs_rows {
         for col in 0..rhs_cols {
@@ -105,7 +105,7 @@ auto_ops::impl_op_ex!(* <T: Float> |lhs: &Operator<T>, rhs: &Operator<T>| -> Ope
     assert_eq!(lhs_cols, rhs_rows);
     let ks = lhs_cols;
 
-    let mut op = Operator::new((lhs_cols, rhs_rows).into());
+    let mut op = Operator::new_with_shape((lhs_cols, rhs_rows).into());
 
     for row in 0..lhs_rows {
         for col in 0..rhs_cols {
