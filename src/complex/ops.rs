@@ -103,9 +103,8 @@ auto_ops::impl_op_ex!(* <T: Float> |lhs: &Operator<T>, rhs: &Operator<T>| -> Ope
     (0..op.height()) // For each row...
         .into_iter()
         .zip(std::iter::repeat(0..op.width()).flatten()) // Traverse width
-        .zip(op.inner.iter_mut())
-        .for_each(|((i, j), v)| {
-            *v = (0..lhs.height()).map(|k| lhs[(i, k)] * rhs[(k, j)]).fold(Complex::<T>::zero(), |a, b| a + b);
+        .for_each(|(i, j)| {
+            op[(i, j)] = (0..lhs.height()).map(|k| lhs[(i, k)] * rhs[(k, j)]).fold(Complex::<T>::zero(), |a, b| a + b);
         }); // And compute
 
     op
@@ -120,5 +119,17 @@ auto_ops::impl_op_ex!(* <T: Float> |lhs: &Bra<T>, rhs: Complex<T>| -> Bra<T> {
 });
 
 auto_ops::impl_op_ex!(* <T: Float> |lhs: &Operator<T>, rhs: Complex<T>| -> Operator<T> {
+    Operator { shape: lhs.shape, inner: lhs.inner.iter().map(|a| *a * rhs).collect() }
+});
+
+auto_ops::impl_op_ex!(* <T: Float> |rhs: Complex<T>, lhs: &Ket<T>| -> Ket<T> {
+    Ket { inner: lhs.inner.iter().map(|a| *a * rhs).collect() }
+});
+
+auto_ops::impl_op_ex!(* <T: Float> |rhs: Complex<T>, lhs: &Bra<T>| -> Bra<T> {
+    Bra { inner: lhs.inner.iter().map(|a| *a * rhs).collect() }
+});
+
+auto_ops::impl_op_ex!(* <T: Float> |rhs: Complex<T>, lhs: &Operator<T>| -> Operator<T> {
     Operator { shape: lhs.shape, inner: lhs.inner.iter().map(|a| *a * rhs).collect() }
 });

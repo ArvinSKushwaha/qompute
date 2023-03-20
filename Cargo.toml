@@ -9,3 +9,4 @@ edition = "2021"
 num = "0.4"
 smallvec = "1.10"
 auto_ops = { path = "./auto_ops" }
+slice-of-array = "0.3"

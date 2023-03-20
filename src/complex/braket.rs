@@ -1,6 +1,7 @@
-use super::{Float, Complex};
-use num::Zero;
-use smallvec::{smallvec, SmallVec};
+use super::{Complex, Float};
+use num::{One, Zero};
+use slice_of_array::prelude::*;
+use smallvec::{smallvec, SmallVec, ToSmallVec};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Orientation {
@@ -73,6 +74,8 @@ pub trait ComplexObject<T: Float> {
     fn size(&self) -> usize {
         self.shape().size()
     }
+
+    fn hermitian(&self) -> bool;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -109,10 +112,16 @@ pub struct Operator<T: Float> {
 
 impl<T: Float> Operator<T> {
     pub fn new(shape: Shape) -> Self {
-        Self {
+        let mut op = Self {
             shape,
             inner: smallvec![Complex::<T>::zero(); shape.size() ],
-        }
+        };
+
+        (0..shape.width.min(shape.height))
+            .into_iter()
+            .for_each(|i| op[(i, i)] = Complex::<T>::one());
+
+        op
     }
 }
 
@@ -140,6 +149,10 @@ impl<T: Float> ComplexObject<T> for Ket<T> {
             height: self.inner.len(),
         }
     }
+
+    fn hermitian(&self) -> bool {
+        false
+    }
 }
 
 impl<T: Float> ComplexObject<T> for Bra<T> {
@@ -165,6 +178,10 @@ impl<T: Float> ComplexObject<T> for Bra<T> {
             width: self.inner.len(),
             height: 1,
         }
+    }
+
+    fn hermitian(&self) -> bool {
+        false
     }
 }
 
@@ -192,6 +209,14 @@ impl<T: Float> ComplexObject<T> for Operator<T> {
     fn shape(&self) -> Shape {
         self.shape
     }
+
+    fn hermitian(&self) -> bool {
+        self.shape == self.shape.transpose()
+            && (0..self.height())
+                .into_iter()
+                .zip(std::iter::repeat(0..self.width()).flatten())
+                .all(|(i, j)| self[(i, j)].conj() == self[(j, i)])
+    }
 }
 
 impl<T: Float> ComplexObject<T> for Complex<T> {
@@ -210,6 +235,10 @@ impl<T: Float> ComplexObject<T> for Complex<T> {
             width: 1,
             height: 1,
         }
+    }
+
+    fn hermitian(&self) -> bool {
+        true
     }
 }
 
@@ -242,19 +271,140 @@ impl<T: Float> std::ops::Index<(usize, usize)> for Operator<T> {
     }
 }
 
+impl<T: Float> std::ops::IndexMut<usize> for Ket<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.inner.index_mut(index)
+    }
+}
+
+impl<T: Float> std::ops::IndexMut<usize> for Bra<T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.inner.index_mut(index)
+    }
+}
+
+impl<T: Float> std::ops::IndexMut<(usize, usize)> for Operator<T> {
+    fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
+        let Self {
+            shape: Shape { width, .. },
+            ..
+        } = *self;
+
+        self.inner.index_mut(index.0 * width + index.1)
+    }
+}
+
+impl<T: Float> From<&[Complex<T>]> for Ket<T> {
+    fn from(value: &[Complex<T>]) -> Self {
+        Ket {
+            inner: value.to_smallvec(),
+        }
+    }
+}
+
+impl<T: Float> From<&[Complex<T>]> for Bra<T> {
+    fn from(value: &[Complex<T>]) -> Self {
+        Bra {
+            inner: value.to_smallvec(),
+        }
+    }
+}
+
+impl<T: Float, const N: usize> From<[Complex<T>; N]> for Ket<T> {
+    fn from(value: [Complex<T>; N]) -> Self {
+        Ket {
+            inner: value.to_smallvec(),
+        }
+    }
+}
+
+impl<T: Float, const N: usize> From<[Complex<T>; N]> for Bra<T> {
+    fn from(value: [Complex<T>; N]) -> Self {
+        Bra {
+            inner: value.to_smallvec(),
+        }
+    }
+}
+
+impl<T: Float> From<&[T]> for Ket<T> {
+    fn from(value: &[T]) -> Self {
+        Ket {
+            inner: value.into_iter().map(Complex::<T>::from).collect(),
+        }
+    }
+}
+
+impl<T: Float> From<&[T]> for Bra<T> {
+    fn from(value: &[T]) -> Self {
+        Bra {
+            inner: value.into_iter().map(Complex::<T>::from).collect(),
+        }
+    }
+}
+
+impl<T: Float, const M: usize, const N: usize> From<[[Complex<T>; N]; M]> for Operator<T> {
+    fn from(value: [[Complex<T>; N]; M]) -> Self {
+        Self {
+            shape: (M, N).into(),
+            inner: value.as_slice().flat().to_smallvec(),
+        }
+    }
+}
+
+impl<T: Float, const M: usize, const N: usize> From<[[T; N]; M]> for Operator<T> {
+    fn from(value: [[T; N]; M]) -> Self {
+        Self {
+            shape: (M, N).into(),
+            inner: value
+                .as_slice()
+                .flat()
+                .iter()
+                .map(Complex::<T>::from)
+                .collect(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::{
+        cmpx,
+        complex::braket::{Bra, ComplexObject, Operator},
+    };
+
+    use super::Ket;
+
     #[test]
     fn test_braket() {
+        let x = Ket::from([cmpx!(1. + 2. j)]);
+        let y = Ket::from([cmpx!(2. + 1.0 j)]);
+
+        let z = Ket::from([cmpx!(3., 3.)]);
+
+        assert_eq!(z, &x + &y);
+        assert_eq!(z.dagger() * &z, cmpx!(18.));
+        assert_eq!(z.dagger() * &y, cmpx!(9. - 3. j));
+        assert_eq!(z.dagger() * &x, cmpx!(9. + 3. j));
+
+        let w = Bra::from([cmpx!(3., -3.)]);
+        assert_eq!(z.dagger(), w);
+
+        let z_proj = &z * &z.dagger();
+        let z_proj_op = Operator::from([[cmpx!(18.)]]);
+
+        assert_eq!(z_proj, z_proj_op);
+        assert_eq!(&x * cmpx!(1. - 2. j), Ket::from([cmpx!(5.0)]));
     }
 
     #[test]
     fn test_operator() {
-        todo!();
-    }
+        // TODO: Add a more robust test suite.
+        let op1 = Operator::from([[cmpx!(1.), cmpx!(1. j)], [cmpx!(-1. j), cmpx!(0.)]]);
 
-    #[test]
-    fn test_arithmetic() {
-        todo!();
+        assert!(op1.hermitian());
+        assert_eq!(op1[(0, 0)], cmpx!(1.));
+        assert_eq!(op1[(0, 1)], cmpx!(1. j));
+        assert_eq!(op1[(1, 0)], cmpx!(-1. j));
+        assert_eq!(op1[(1, 1)], cmpx!(0.));
     }
 }
