@@ -79,33 +79,39 @@ auto_ops::impl_op_ex!(- <T: Float> |lhs: &Operator<T>, rhs: &Operator<T>| -> Ope
 });
 
 auto_ops::impl_op_ex!(* <T: Float> |lhs: &Bra<T>, rhs: &Ket<T>| -> Complex<T> {
-    assert_eq!(lhs.shape().width, rhs.shape().height);
+    assert_eq!(lhs.shape().cols, rhs.shape().rows);
     lhs.inner.iter().zip(rhs.inner.iter()).map(|(a, b)| *a * *b).fold(Complex::<T>::zero(), |a, b| { a + b })
 });
 
 auto_ops::impl_op_ex!(* <T: Float> |lhs: &Ket<T>, rhs: &Bra<T>| -> Operator<T> {
-    debug_assert_eq!(lhs.shape().width, rhs.shape().height);
-    let mut op = Operator::new((rhs.height(), lhs.width()).into());
+    let (_, lhs_rows) = lhs.shape().into();
+    let (rhs_cols, _) = rhs.shape().into();
 
-    (0..op.height()) // For each row...
-        .into_iter()
-        .zip(std::iter::repeat(0..op.width()).flatten()) // Traverse width
-        .zip(op.inner.iter_mut())
-        .for_each(|((i, j), v)| *v = lhs[i] * rhs[j]); // And compute
+    let mut op = Operator::new((rhs.rows(), lhs.cols()).into());
+
+    for row in 0..lhs_rows {
+        for col in 0..rhs_cols {
+            op[(row, col)] = lhs[row] * rhs[col];
+        }
+    }
 
     op
 });
 
 auto_ops::impl_op_ex!(* <T: Float> |lhs: &Operator<T>, rhs: &Operator<T>| -> Operator<T> {
-    debug_assert_eq!(lhs.width(), rhs.height());
-    let mut op = Operator::new((rhs.height(), lhs.width()).into());
+    let (lhs_rows, lhs_cols) = lhs.shape().into();
+    let (rhs_rows, rhs_cols) = rhs.shape().into();
 
-    (0..op.height()) // For each row...
-        .into_iter()
-        .zip(std::iter::repeat(0..op.width()).flatten()) // Traverse width
-        .for_each(|(i, j)| {
-            op[(i, j)] = (0..lhs.height()).map(|k| lhs[(i, k)] * rhs[(k, j)]).fold(Complex::<T>::zero(), |a, b| a + b);
-        }); // And compute
+    assert_eq!(lhs_cols, rhs_rows);
+    let ks = lhs_cols;
+
+    let mut op = Operator::new((lhs_cols, rhs_rows).into());
+
+    for row in 0..lhs_rows {
+        for col in 0..rhs_cols {
+                op[(row, col)] = (0..ks).map(|k| lhs[(row, k)] * rhs[(k, col)]).sum();
+        }
+    }
 
     op
 });

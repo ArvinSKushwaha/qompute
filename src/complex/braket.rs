@@ -26,30 +26,37 @@ impl std::ops::Neg for Orientation {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct Shape {
-    pub(crate) width: usize,
-    pub(crate) height: usize,
+    pub(crate) rows: usize,
+    pub(crate) cols: usize,
 }
 
 impl Shape {
     pub fn transpose(self) -> Self {
-        let Self { width, height } = self;
+        let Self { cols, rows } = self;
         Self {
-            width: height,
-            height: width,
+            cols: rows,
+            rows: cols,
         }
     }
 
     pub fn size(self) -> usize {
-        self.width * self.height
+        self.cols * self.rows
     }
 }
 
 impl From<(usize, usize)> for Shape {
     fn from(value: (usize, usize)) -> Self {
         Shape {
-            width: value.0,
-            height: value.1,
+            rows: value.0,
+            cols: value.1,
         }
+    }
+}
+
+impl From<Shape> for (usize, usize) {
+    fn from(value: Shape) -> Self {
+        let Shape { rows, cols } = value;
+        (rows, cols)
     }
 }
 
@@ -63,12 +70,12 @@ pub trait ComplexObject<T: Float> {
     fn dagger(&self) -> Self::ConjugateTranspose;
     fn shape(&self) -> Shape;
 
-    fn width(&self) -> usize {
-        self.shape().width
+    fn cols(&self) -> usize {
+        self.shape().cols
     }
 
-    fn height(&self) -> usize {
-        self.shape().height
+    fn rows(&self) -> usize {
+        self.shape().rows
     }
 
     fn size(&self) -> usize {
@@ -117,9 +124,7 @@ impl<T: Float> Operator<T> {
             inner: smallvec![Complex::<T>::zero(); shape.size() ],
         };
 
-        (0..shape.width.min(shape.height))
-            .into_iter()
-            .for_each(|i| op[(i, i)] = Complex::<T>::one());
+        (0..shape.cols.min(shape.rows)).for_each(|i| op[(i, i)] = Complex::<T>::one());
 
         op
     }
@@ -145,8 +150,8 @@ impl<T: Float> ComplexObject<T> for Ket<T> {
 
     fn shape(&self) -> Shape {
         Shape {
-            width: 1,
-            height: self.inner.len(),
+            cols: 1,
+            rows: self.inner.len(),
         }
     }
 
@@ -175,8 +180,8 @@ impl<T: Float> ComplexObject<T> for Bra<T> {
 
     fn shape(&self) -> Shape {
         Shape {
-            width: self.inner.len(),
-            height: 1,
+            cols: self.inner.len(),
+            rows: 1,
         }
     }
 
@@ -193,10 +198,9 @@ impl<T: Float> ComplexObject<T> for Operator<T> {
     const ORIENTATION: Orientation = Orientation::NonOriented;
 
     fn dagger(&self) -> Self::ConjugateTranspose {
-        let Shape { width, height } = self.shape;
-        let inner = (0..height) // For each row...
-            .into_iter()
-            .zip(std::iter::repeat(0..width).flatten()) // Traverse width
+        let Shape { cols, rows } = self.shape;
+        let inner = (0..rows) // For each row...
+            .zip(std::iter::repeat(0..cols).flatten()) // Traverse width
             .map(|(i, j)| self[(j, i)].conj()) // And grab the opposing conjugate
             .collect::<SmallVec<_>>();
 
@@ -212,9 +216,8 @@ impl<T: Float> ComplexObject<T> for Operator<T> {
 
     fn hermitian(&self) -> bool {
         self.shape == self.shape.transpose()
-            && (0..self.height())
-                .into_iter()
-                .zip(std::iter::repeat(0..self.width()).flatten())
+            && (0..self.rows())
+                .zip(std::iter::repeat(0..self.cols()).flatten())
                 .all(|(i, j)| self[(i, j)].conj() == self[(j, i)])
     }
 }
@@ -231,10 +234,7 @@ impl<T: Float> ComplexObject<T> for Complex<T> {
     }
 
     fn shape(&self) -> Shape {
-        Shape {
-            width: 1,
-            height: 1,
-        }
+        Shape { cols: 1, rows: 1 }
     }
 
     fn hermitian(&self) -> bool {
@@ -263,11 +263,11 @@ impl<T: Float> std::ops::Index<(usize, usize)> for Operator<T> {
 
     fn index(&self, index: (usize, usize)) -> &Self::Output {
         let Self {
-            shape: Shape { width, .. },
+            shape: Shape { cols, .. },
             ..
         } = self;
 
-        self.inner.index(index.0 * width + index.1)
+        self.inner.index(index.0 * cols + index.1)
     }
 }
 
@@ -286,11 +286,11 @@ impl<T: Float> std::ops::IndexMut<usize> for Bra<T> {
 impl<T: Float> std::ops::IndexMut<(usize, usize)> for Operator<T> {
     fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
         let Self {
-            shape: Shape { width, .. },
+            shape: Shape { cols, .. },
             ..
         } = *self;
 
-        self.inner.index_mut(index.0 * width + index.1)
+        self.inner.index_mut(index.0 * cols + index.1)
     }
 }
 
@@ -329,7 +329,7 @@ impl<T: Float, const N: usize> From<[Complex<T>; N]> for Bra<T> {
 impl<T: Float> From<&[T]> for Ket<T> {
     fn from(value: &[T]) -> Self {
         Ket {
-            inner: value.into_iter().map(Complex::<T>::from).collect(),
+            inner: value.iter().map(Complex::<T>::from).collect(),
         }
     }
 }
@@ -337,7 +337,7 @@ impl<T: Float> From<&[T]> for Ket<T> {
 impl<T: Float> From<&[T]> for Bra<T> {
     fn from(value: &[T]) -> Self {
         Bra {
-            inner: value.into_iter().map(Complex::<T>::from).collect(),
+            inner: value.iter().map(Complex::<T>::from).collect(),
         }
     }
 }
@@ -369,7 +369,10 @@ impl<T: Float, const M: usize, const N: usize> From<[[T; N]; M]> for Operator<T>
 mod tests {
     use crate::{
         cmpx,
-        complex::braket::{Bra, ComplexObject, Operator},
+        complex::{
+            braket::{Bra, ComplexObject, Operator},
+            Complex, If32,
+        },
     };
 
     use super::Ket;
@@ -394,6 +397,26 @@ mod tests {
 
         assert_eq!(z_proj, z_proj_op);
         assert_eq!(&x * cmpx!(1. - 2. j), Ket::from([cmpx!(5.0)]));
+
+        let mut x = Ket::new(5);
+        let mut y = Ket::new(5);
+
+        (0..5)
+            .map(|i| cmpx!(0.5) * i as f32)
+            .enumerate()
+            .for_each(|(i, f)| x[i] = f.into());
+
+        (0..5)
+            .map(|i| cmpx!(-0.5 j) * i as f32)
+            .enumerate()
+            .for_each(|(i, f)| y[i] = f.into());
+
+        assert_eq!(
+            y.dagger() * x,
+            (0..5)
+                .map(|i| 0.25 * (i * i) as f32 * If32)
+                .sum::<Complex<f32>>()
+        );
     }
 
     #[test]
@@ -406,5 +429,13 @@ mod tests {
         assert_eq!(op1[(0, 1)], cmpx!(1. j));
         assert_eq!(op1[(1, 0)], cmpx!(-1. j));
         assert_eq!(op1[(1, 1)], cmpx!(0.));
+
+        let op2 = Operator::from([[0., 2.], [1., 0.]]);
+        let op3 = &op1 * &op2;
+
+        assert_eq!(
+            op3,
+            Operator::from([[cmpx!(1. j), cmpx!(2.)], [cmpx!(0.), cmpx!(-2. j)]])
+        );
     }
 }
