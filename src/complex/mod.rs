@@ -3,6 +3,9 @@ pub use num::{Float, complex::Complex};
 pub mod braket;
 pub mod ops;
 pub mod gates;
+mod iters;
+
+pub use iters::{ToBra, ToKet, ToOperator};
 
 
 #[macro_export]

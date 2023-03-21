@@ -3,6 +3,15 @@ use crate::prelude::*;
 use num::{One, Zero};
 use slice_of_array::prelude::*;
 use smallvec::{smallvec, SmallVec, ToSmallVec};
+use thiserror::Error;
+
+#[derive(Clone, Debug, Error, PartialEq, Eq, Hash)]
+pub enum QomputeTypeError {
+    #[error("It seems your types don't match size.")]
+    NonMatchingSizes,
+    #[error("You may have passed in a value with zero size, when a non-zero size was expected")]
+    EmptyInput,
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Orientation {
@@ -61,15 +70,17 @@ impl From<Shape> for (usize, usize) {
     }
 }
 
-pub trait ComplexObject<T: Float> {
+pub trait ComplexObject<T: Float>: Sized {
     type ConjugateTranspose: ComplexObject<T>;
     type InnerProduct: ComplexObject<T>;
     type OuterProduct: ComplexObject<T>;
+    type IndexType: Copy;
 
     const ORIENTATION: Orientation;
 
     fn dagger(&self) -> Self::ConjugateTranspose;
     fn shape(&self) -> Shape;
+    fn tensorprod(&self, rhs: &Self) -> Self;
 
     fn cols(&self) -> usize {
         self.shape().cols
@@ -84,6 +95,9 @@ pub trait ComplexObject<T: Float> {
     }
 
     fn hermitian(&self) -> bool;
+
+    fn index(&self, idx: Self::IndexType) -> &Complex<T>;
+    fn index_mut(&mut self, idx: Self::IndexType) -> &mut Complex<T>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -152,6 +166,7 @@ impl<T: Float> ComplexObject<T> for Ket<T> {
     type ConjugateTranspose = Bra<T>;
     type InnerProduct = Complex<T>;
     type OuterProduct = Operator<T>;
+    type IndexType = usize;
 
     const ORIENTATION: Orientation = Orientation::Column;
 
@@ -176,12 +191,42 @@ impl<T: Float> ComplexObject<T> for Ket<T> {
     fn hermitian(&self) -> bool {
         false
     }
+
+    fn index(&self, idx: Self::IndexType) -> &Complex<T> {
+        &self[idx]
+    }
+
+    fn index_mut(&mut self, idx: Self::IndexType) -> &mut Complex<T> {
+        &mut self[idx]
+    }
+
+    fn tensorprod(&self, rhs: &Self) -> Self {
+        // TODO: Implement tensor product for objects.
+        let (lhs_rows, lhs_cols) = self.shape().into();
+        let (rhs_rows, rhs_cols) = rhs.shape().into();
+        let out_shape = Shape {
+            rows: lhs_rows * rhs_rows,
+            cols: lhs_cols * rhs_cols,
+        };
+
+        let mut bra = Ket::new(out_shape.rows);
+
+        for i0 in 0..lhs_cols {
+            let i_off = i0 * rhs_cols;
+            for i1 in 0..rhs_cols {
+                bra[i_off + i1] = self[i0] * rhs[i1];
+            }
+        }
+
+        bra
+    }
 }
 
 impl<T: Float> ComplexObject<T> for Bra<T> {
     type ConjugateTranspose = Ket<T>;
     type InnerProduct = Complex<T>;
     type OuterProduct = Operator<T>;
+    type IndexType = usize;
 
     const ORIENTATION: Orientation = Orientation::Row;
 
@@ -206,12 +251,42 @@ impl<T: Float> ComplexObject<T> for Bra<T> {
     fn hermitian(&self) -> bool {
         false
     }
+
+    fn index(&self, idx: Self::IndexType) -> &Complex<T> {
+        &self[idx]
+    }
+
+    fn index_mut(&mut self, idx: Self::IndexType) -> &mut Complex<T> {
+        &mut self[idx]
+    }
+
+    fn tensorprod(&self, rhs: &Self) -> Self {
+        // TODO: Implement tensor product for objects.
+        let (lhs_rows, lhs_cols) = self.shape().into();
+        let (rhs_rows, rhs_cols) = rhs.shape().into();
+        let out_shape = Shape {
+            rows: lhs_rows * rhs_rows,
+            cols: lhs_cols * rhs_cols,
+        };
+
+        let mut bra = Bra::new(out_shape.cols);
+
+        for j0 in 0..lhs_cols {
+            let j_off = j0 * rhs_cols;
+            for j1 in 0..rhs_cols {
+                bra[j_off + j1] = self[j0] * rhs[j1];
+            }
+        }
+
+        bra
+    }
 }
 
 impl<T: Float> ComplexObject<T> for Operator<T> {
     type ConjugateTranspose = Operator<T>;
     type InnerProduct = Operator<T>;
     type OuterProduct = Operator<T>;
+    type IndexType = (usize, usize);
 
     const ORIENTATION: Orientation = Orientation::NonOriented;
 
@@ -238,12 +313,47 @@ impl<T: Float> ComplexObject<T> for Operator<T> {
                 .zip(std::iter::repeat(0..self.cols()).flatten())
                 .all(|(i, j)| self[(i, j)].conj() == self[(j, i)])
     }
+
+    fn index(&self, idx: Self::IndexType) -> &Complex<T> {
+        &self[idx]
+    }
+
+    fn index_mut(&mut self, idx: Self::IndexType) -> &mut Complex<T> {
+        &mut self[idx]
+    }
+
+    fn tensorprod(&self, rhs: &Self) -> Self {
+        // TODO: Implement tensor product for objects.
+        let (lhs_rows, lhs_cols) = self.shape().into();
+        let (rhs_rows, rhs_cols) = rhs.shape().into();
+        let out_shape = Shape {
+            rows: lhs_rows * rhs_rows,
+            cols: lhs_cols * rhs_cols,
+        };
+
+        let mut op = Operator::new_with_shape(out_shape);
+
+        for i0 in 0..lhs_rows {
+            let i_off = i0 * rhs_rows;
+            for j0 in 0..lhs_cols {
+                let j_off = j0 * rhs_cols;
+                for i1 in 0..rhs_rows {
+                    for j1 in 0..rhs_cols {
+                        op[(i_off + i1, j_off + j1)] = self[(i0, j0)] * rhs[(i1, j1)];
+                    }
+                }
+            }
+        }
+
+        op
+    }
 }
 
 impl<T: Float> ComplexObject<T> for Complex<T> {
     type ConjugateTranspose = Complex<T>;
     type InnerProduct = Complex<T>;
     type OuterProduct = Complex<T>;
+    type IndexType = ();
 
     const ORIENTATION: Orientation = Orientation::NonOriented;
 
@@ -257,6 +367,18 @@ impl<T: Float> ComplexObject<T> for Complex<T> {
 
     fn hermitian(&self) -> bool {
         true
+    }
+
+    fn index(&self, _idx: Self::IndexType) -> &Complex<T> {
+        self
+    }
+
+    fn index_mut(&mut self, _idx: Self::IndexType) -> &mut Complex<T> {
+        self
+    }
+
+    fn tensorprod(&self, rhs: &Self) -> Self {
+        self * rhs
     }
 }
 
@@ -380,6 +502,48 @@ impl<T: Float, const M: usize, const N: usize> From<[[T; N]; M]> for Operator<T>
                 .map(Complex::<T>::from)
                 .collect(),
         }
+    }
+}
+
+impl<T: Float, const M: usize, const N: usize> TryFrom<[[Operator<T>; N]; M]> for Operator<T> {
+    type Error = QomputeTypeError;
+
+    fn try_from(value: [[Operator<T>; N]; M]) -> Result<Self, Self::Error> {
+        if M == 0 || N == 0 {
+            return Err(QomputeTypeError::EmptyInput);
+        }
+
+        let matching_shapes = value
+            .as_slice()
+            .flat()
+            .windows(2)
+            .all(|s| s[0].shape() == s[1].shape());
+
+        if !matching_shapes {
+            return Err(QomputeTypeError::NonMatchingSizes);
+        }
+
+
+        let inner_shape = value[0][0].shape();
+        let op_shape = Shape {
+            rows: inner_shape.rows * M,
+            cols: inner_shape.cols * N,
+        };
+        let mut op = Operator::new_with_shape(op_shape);
+
+        for i0 in 0..M {
+            let i_off = i0 * inner_shape.rows;
+            for j0 in 0..N {
+                let j_off = j0 * inner_shape.cols;
+                for i1 in 0..(inner_shape.rows) {
+                    for j1 in 0..(inner_shape.cols) {
+                        op[(i_off + i1, j_off + j1)] = value[i0][j0][(i1, j1)];
+                    }
+                }
+            }
+        }
+
+        Ok(op)
     }
 }
 

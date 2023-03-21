@@ -1,4 +1,4 @@
-use num::Zero;
+use num::{Zero, One};
 
 use crate::prelude::*;
 
@@ -138,4 +138,28 @@ auto_ops::impl_op_ex!(* <T: Float> |rhs: Complex<T>, lhs: &Bra<T>| -> Bra<T> {
 
 auto_ops::impl_op_ex!(* <T: Float> |rhs: Complex<T>, lhs: &Operator<T>| -> Operator<T> {
     Operator { shape: lhs.shape, inner: lhs.inner.iter().map(|a| *a * rhs).collect() }
+});
+
+auto_ops::impl_op_ex!(& <T: Float> |lhs: &Ket<T>, rhs: &Ket<T>| -> Ket<T> {
+    lhs.tensorprod(rhs)
+});
+
+auto_ops::impl_op_ex!(& <T: Float> |lhs: &Bra<T>, rhs: &Bra<T>| -> Bra<T> {
+    lhs.tensorprod(rhs)
+});
+
+auto_ops::impl_op_ex!(& <T: Float> |lhs: &Operator<T>, rhs: &Operator<T>| -> Operator<T> {
+    lhs.tensorprod(rhs)
+});
+
+auto_ops::impl_op_ex!(- <T: Float> |lhs: &Ket<T>| -> Ket<T> {
+    lhs * (-Complex::<T>::one())
+});
+
+auto_ops::impl_op_ex!(- <T: Float> |lhs: &Bra<T>| -> Bra<T> {
+    lhs * (-Complex::<T>::one())
+});
+
+auto_ops::impl_op_ex!(- <T: Float> |lhs: &Operator<T>| -> Operator<T> {
+    lhs * (-Complex::<T>::one())
 });
